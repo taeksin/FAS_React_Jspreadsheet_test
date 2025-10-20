@@ -62,7 +62,6 @@ const parseRef = (ref) => {
     const match = String(ref).match(/([A-Za-z]+)(\d+)/);
     if (!match) return null;
     const [, colLetters, rowStr] = match;
-    // A=1, B=2 ... Z=26, AA=27 ...
     let col = 0;
     for (let i = 0; i < colLetters.length; i += 1) {
         col = col * 26 + (colLetters.charCodeAt(i) - 64);
@@ -83,8 +82,7 @@ const colToLetters = (n) => {
     return s;
 };
 
-// start, end: e.g., 'A1', 'B10'
-// 반환: { A1: 'border-top: ...', ... }
+// 외곽 테두리 생성
 const buildOuterBorderStyle = (start, end, color = borderColor, width = '2px') => {
     const a = parseRef(start);
     const b = parseRef(end);
@@ -93,32 +91,14 @@ const buildOuterBorderStyle = (start, end, color = borderColor, width = '2px') =
     const bottom = Math.max(a.row, b.row);
     const left = Math.min(a.col, b.col);
     const right = Math.max(a.col, b.col);
-
     const style = {};
     const addStyle = (addr, fragment) => {
         style[addr] = style[addr] ? `${style[addr]} ${fragment}` : fragment;
     };
-
-    // Top border across left..right at row=top
-    for (let c = left; c <= right; c += 1) {
-        const key = `${colToLetters(c)}${top}`;
-        addStyle(key, `border-top: ${width} solid ${color};`);
-    }
-    // Bottom border across left..right at row=bottom
-    for (let c = left; c <= right; c += 1) {
-        const key = `${colToLetters(c)}${bottom}`;
-        addStyle(key, `border-bottom: ${width} solid ${color};`);
-    }
-    // Left border across top..bottom at col=left
-    for (let r = top; r <= bottom; r += 1) {
-        const key = `${colToLetters(left)}${r}`;
-        addStyle(key, `border-left: ${width} solid ${color};`);
-    }
-    // Right border across top..bottom at col=right
-    for (let r = top; r <= bottom; r += 1) {
-        const key = `${colToLetters(right)}${r}`;
-        addStyle(key, `border-right: ${width} solid ${color};`);
-    }
+    for (let c = left; c <= right; c++) addStyle(`${colToLetters(c)}${top}`, `border-top: ${width} solid ${color};`);
+    for (let c = left; c <= right; c++) addStyle(`${colToLetters(c)}${bottom}`, `border-bottom: ${width} solid ${color};`);
+    for (let r = top; r <= bottom; r++) addStyle(`${colToLetters(left)}${r}`, `border-left: ${width} solid ${color};`);
+    for (let r = top; r <= bottom; r++) addStyle(`${colToLetters(right)}${r}`, `border-right: ${width} solid ${color};`);
     return style;
 };
 
@@ -126,6 +106,7 @@ const JSpreadsheetCE5Tab = () => {
     const jssRef = useRef(null);
     const instanceRef = useRef(null);
     const fileInputRef = useRef(null);
+    const [activeSheet, setActiveSheet] = React.useState(0); // ✅ 현재 선택된 시트 index
 
     useEffect(() => {
         if (jssRef.current && !instanceRef.current) {
@@ -133,35 +114,32 @@ const JSpreadsheetCE5Tab = () => {
             instanceRef.current = jspreadsheet(jssRef.current, {
                 worksheets: [
                     {
-                        // 샘플 데이터
-                        data: [
-                            ['Data1', 'Data2'],
-                            ['Data3', 'Data4'],
-                            ['Data5', 'Data6'],
-                        ],
-                        columns: [
-                            { type: 'text', width: 120 },
-                            { type: 'text', width: 120 },
-                        ],
+                        data: [['Data1', 'Data2'], ['Data3', 'Data4'], ['Data5', 'Data6']],
+                        columns: [{ type: 'text', width: 120 }, { type: 'text', width: 120 }],
                         allowComments: true,
-                        // 선택 영역 바깥쪽 테두리를 동적으로 생성
-                        style: {
-                            ...buildOuterBorderStyle('B1', 'B5', borderColor, '2px'),
-                        },
+                        style: { ...buildOuterBorderStyle('B1', 'B5', borderColor, '2px') },
                         minDimensions: [10, 10],
                     },
                 ],
             });
         }
-
         return () => {
-            if (instanceRef.current && typeof instanceRef.current.destroy === 'function') {
-                try { instanceRef.current.destroy(); } catch (e) { /* noop */ }
+            if (instanceRef.current?.destroy) {
+                try { instanceRef.current.destroy(); } catch {}
             }
             instanceRef.current = null;
             if (jssRef.current) jssRef.current.innerHTML = '';
         };
     }, []);
+
+    const renderSheet = (worksheets, index) => {
+        if (!worksheets[index]) return;
+        if (instanceRef.current?.destroy) {
+            try { instanceRef.current.destroy(); } catch {}
+        }
+        jssRef.current.innerHTML = '';
+        instanceRef.current = jspreadsheet(jssRef.current, { worksheets: [worksheets[index]] });
+    };
 
     return (
         <div className="grid-wrapper">
@@ -171,94 +149,101 @@ const JSpreadsheetCE5Tab = () => {
                     type="file"
                     accept=".xlsx,.xls"
                     onChange={async (e) => {
-                        const file = e.target.files && e.target.files[0];
+                        const file = e.target.files?.[0];
                         if (!file) return;
                         try {
                             const array = await file.arrayBuffer();
-                            let XLSX = window.XLSX;
-                            if (!XLSX) {
-                                try { XLSX = await import('xlsx'); } catch (err) { console.error('XLSX 로드 실패', err); return; }
-                            }
+                            let XLSX = window.XLSX || (await import('xlsx'));
                             const wb = XLSX.read(array, { type: 'array', cellStyles: true });
-                            const worksheets = (wb.SheetNames || []).map((name) => {
+
+                            // ✅ 모든 시트 읽기
+                            const worksheets = [];
+                            for (const name of wb.SheetNames) {
                                 const ws = wb.Sheets[name];
                                 const ref = ws['!ref'];
-                                if (!ref) return { data: [['']], minDimensions: [10, 10] };
                                 const range = XLSX.utils.decode_range(ref);
                                 const rowCount = Math.max(10, range.e.r + 1);
                                 const colCount = Math.max(10, range.e.c + 1);
-                                const data = Array.from({ length: rowCount }, () => Array.from({ length: colCount }, () => ''));
+                                const data = Array.from({ length: rowCount }, () => Array(colCount).fill(''));
 
-                                // 셀 값 채우기 (절대좌표 유지)
                                 Object.keys(ws)
-                                .filter(k => /^(?:[A-Z]+)(?:\d+)$/.test(k))
-                                .forEach(addr => {
-                                    const cell = ws[addr];
-                                    const c = XLSX.utils.decode_cell(addr);
-                                    if (c.r < rowCount && c.c < colCount) {
-                                    data[c.r][c.c] = (cell && (cell.w ?? cell.v)) ?? '';
-                                    }
-                                });
+                                    .filter(k => /^[A-Z]+\d+$/.test(k))
+                                    .forEach(addr => {
+                                        const cell = ws[addr];
+                                        const c = XLSX.utils.decode_cell(addr);
+                                        data[c.r][c.c] = (cell && (cell.w ?? cell.v)) ?? '';
+                                    });
 
-
-                                // 병합 처리: SheetJS '!merges' -> jspreadsheet mergeCells (절대좌표)
                                 const mergeCells = {};
-                                const merges = ws['!merges'] || [];
-                                merges.forEach(m => {
-                                    if (!m || !m.s || !m.e) return;
-
-                                    // 절대좌표 그대로 사용
+                                (ws['!merges'] || []).forEach(m => {
                                     const startCol = m.s.c + 1;
                                     const startRow = m.s.r + 1;
                                     const startAddr = `${colToLetters(startCol)}${startRow}`;
-
                                     const rows = (m.e.r - m.s.r) + 1;
                                     const cols = (m.e.c - m.s.c) + 1;
-
-                                    if (rows > 1 || cols > 1) {
-                                        mergeCells[startAddr] = [cols, rows];
-                                    }
+                                    if (rows > 1 || cols > 1) mergeCells[startAddr] = [cols, rows];
                                 });
 
-
-                                // 배경색 처리: 셀 스타일에서 fgColor를 읽어 background-color로 변환
+                                const workbook = await XlsxPopulate.fromDataAsync(array);
+                                const sheet = workbook.sheet(name);
                                 const style = {};
-                                const cellAddrs = Object.keys(ws).filter(k => /^(?:[A-Z]+)(?:\d+)$/.test(k));
-                                cellAddrs.forEach(addr => {
-                                    const cell = ws[addr];
-                                    const fill = cell && cell.s && (cell.s.fill || cell.s.F || cell.s.patternType ? cell.s.fill : null);
-                                    // fg 또는 bg 색상 시도
-                                    const fg = fill && (fill.fgColor || fill.fgcolor || fill.fg || fill.bgColor || fill.bgcolor || fill.bg);
-                                    let rgb = fg && (fg.rgb || fg.RGB);
-                                    if (rgb) {
-                                        const hex = rgb.length === 8 ? `#${rgb.slice(2)}` : `#${rgb.slice(-6)}`;
-                                        const dc = XLSX.utils.decode_cell(addr);
-                                        const rRel = dc.r - range.s.r + 1;
-                                        const cRel = dc.c - range.s.c + 1;
-                                        if (rRel >= 1 && rRel <= rowCount && cRel >= 1 && cRel <= colCount) {
-                                            const dest = `${colToLetters(cRel)}${rRel}`;
-                                            style[dest] = style[dest]
-                                                ? `${style[dest]} background-color: ${hex};`
-                                                : `background-color: ${hex};`;
+                                sheet._rows.forEach((row, rIdx) => {
+                                    row._cells?.forEach((cell, cIdx) => {
+                                        if (!cell) return;
+                                        const fill = cell.style('fill');
+                                        let colorHex = null;
+                                        if (fill && typeof fill.color === 'function') {
+                                            const colorObj = fill.color();
+                                            if (colorObj?.rgb) colorHex = `#${colorObj.rgb.slice(-6)}`;
+                                        } else if (fill?.color && typeof fill.color === 'object' && fill.color.rgb) {
+                                            colorHex = `#${fill.color.rgb.slice(-6)}`;
+                                        } else if (typeof fill?.color === 'string' && /^#?[0-9A-Fa-f]{6,8}$/.test(fill.color)) {
+                                            colorHex = fill.color.startsWith('#') ? fill.color : `#${fill.color.slice(-6)}`;
                                         }
-                                    }
+                                        if (colorHex) {
+                                            const addr = `${colToLetters(cIdx)}${rIdx}`;
+                                            style[addr] = (style[addr] ?? '') + `background-color: ${colorHex};`;
+                                        }
+                                    });
                                 });
 
                                 const sheetConfig = { data, minDimensions: [colCount, rowCount] };
                                 if (Object.keys(mergeCells).length) sheetConfig.mergeCells = mergeCells;
                                 if (Object.keys(style).length) sheetConfig.style = style;
-                                return sheetConfig;
-                            });
-                            if (!worksheets.length) return;
-
-                            // 재생성
-                            if (instanceRef.current && typeof instanceRef.current.destroy === 'function') {
-                                try { instanceRef.current.destroy(); } catch (err) { /* noop */ }
+                                worksheets.push({ ...sheetConfig, worksheetName: name });
                             }
-                            if (jssRef.current) jssRef.current.innerHTML = '';
-                            instanceRef.current = jspreadsheet(jssRef.current, {
-                                worksheets,
+
+                            // ✅ 시트 전환 UI 렌더링
+                            setActiveSheet(0);
+                            renderSheet(worksheets, 0);
+
+                            // ✅ 시트 탭 버튼 렌더링
+                            const tabContainer = document.createElement('div');
+                            tabContainer.style.marginBottom = '8px';
+                            tabContainer.style.display = 'flex';
+                            tabContainer.style.gap = '6px';
+
+                            worksheets.forEach((sheet, idx) => {
+                                const btn = document.createElement('button');
+                                btn.innerText = sheet.worksheetName || `Sheet${idx + 1}`;
+                                btn.style.padding = '4px 8px';
+                                btn.style.cursor = 'pointer';
+                                btn.style.border = idx === 0 ? '2px solid #007bff' : '1px solid #ccc';
+                                btn.style.background = idx === 0 ? '#e8f0ff' : '#fff';
+                                btn.onclick = () => {
+                                    setActiveSheet(idx);
+                                    renderSheet(worksheets, idx);
+                                    Array.from(tabContainer.children).forEach((b, i) => {
+                                        b.style.border = i === idx ? '2px solid #007bff' : '1px solid #ccc';
+                                        b.style.background = i === idx ? '#e8f0ff' : '#fff';
+                                    });
+                                };
+                                tabContainer.appendChild(btn);
                             });
+
+                            if (jssRef.current.parentElement) {
+                                jssRef.current.parentElement.insertBefore(tabContainer, jssRef.current);
+                            }
                         } catch (err) {
                             console.error('파일 처리 실패', err);
                         } finally {
