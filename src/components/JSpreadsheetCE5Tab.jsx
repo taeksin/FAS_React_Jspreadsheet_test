@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { jspreadsheet } from '@jspreadsheet-ce/react';
 import 'jspreadsheet-ce/dist/jspreadsheet.css';
 import 'jsuites/dist/jsuites.css';
@@ -54,15 +54,12 @@ jspreadsheet.setDictionary({
     'This action will clear your search results. Are you sure?': '이 작업은 검색 결과를 지웁니다. 계속하시겠습니까?'
 });
 
-// 테두리 색상
 const borderColor = '#ff1e1e';
 
-// 예: 'A1' -> { col: 1, row: 1 }
 const parseRef = (ref) => {
     const match = String(ref).match(/([A-Za-z]+)(\d+)/);
     if (!match) return null;
     const [, colLetters, rowStr] = match;
-    // A=1, B=2 ... Z=26, AA=27 ...
     let col = 0;
     for (let i = 0; i < colLetters.length; i += 1) {
         col = col * 26 + (colLetters.charCodeAt(i) - 64);
@@ -71,7 +68,6 @@ const parseRef = (ref) => {
     return { col, row };
 };
 
-// 1 -> 'A', 27 -> 'AA'
 const colToLetters = (n) => {
     let s = '';
     let x = n;
@@ -83,8 +79,6 @@ const colToLetters = (n) => {
     return s;
 };
 
-// start, end: e.g., 'A1', 'B10'
-// 반환: { A1: 'border-top: ...', ... }
 const buildOuterBorderStyle = (start, end, color = borderColor, width = '2px') => {
     const a = parseRef(start);
     const b = parseRef(end);
@@ -93,38 +87,44 @@ const buildOuterBorderStyle = (start, end, color = borderColor, width = '2px') =
     const bottom = Math.max(a.row, b.row);
     const left = Math.min(a.col, b.col);
     const right = Math.max(a.col, b.col);
-
     const style = {};
     const addStyle = (addr, fragment) => {
         style[addr] = style[addr] ? `${style[addr]} ${fragment}` : fragment;
     };
-
-    // Top border across left..right at row=top
-    for (let c = left; c <= right; c += 1) {
-        const key = `${colToLetters(c)}${top}`;
-        addStyle(key, `border-top: ${width} solid ${color};`);
-    }
-    // Bottom border across left..right at row=bottom
-    for (let c = left; c <= right; c += 1) {
-        const key = `${colToLetters(c)}${bottom}`;
-        addStyle(key, `border-bottom: ${width} solid ${color};`);
-    }
-    // Left border across top..bottom at col=left
-    for (let r = top; r <= bottom; r += 1) {
-        const key = `${colToLetters(left)}${r}`;
-        addStyle(key, `border-left: ${width} solid ${color};`);
-    }
-    // Right border across top..bottom at col=right
-    for (let r = top; r <= bottom; r += 1) {
-        const key = `${colToLetters(right)}${r}`;
-        addStyle(key, `border-right: ${width} solid ${color};`);
-    }
+    for (let c = left; c <= right; c += 1)
+        addStyle(`${colToLetters(c)}${top}`, `border-top: ${width} solid ${color};`);
+    for (let c = left; c <= right; c += 1)
+        addStyle(`${colToLetters(c)}${bottom}`, `border-bottom: ${width} solid ${color};`);
+    for (let r = top; r <= bottom; r += 1)
+        addStyle(`${colToLetters(left)}${r}`, `border-left: ${width} solid ${color};`);
+    for (let r = top; r <= bottom; r += 1)
+        addStyle(`${colToLetters(right)}${r}`, `border-right: ${width} solid ${color};`);
     return style;
 };
 
 const JSpreadsheetCE5Tab = () => {
     const jssRef = useRef(null);
     const instanceRef = useRef(null);
+    const [size, setSize] = useState({ width: 700, height: 400 });
+    const [resizing, setResizing] = useState(null);
+    const [isReady, setIsReady] = useState(false);
+
+    const updateTableSize = () => {
+        if (!instanceRef.current || !isReady) return;
+        const sheet = instanceRef.current[0];
+        if (!sheet) return;
+        const visibleCols = Math.max(2, Math.floor(size.width / 120));
+        const visibleRows = Math.max(5, Math.floor(size.height / 30));
+        const newData = [];
+        for (let r = 0; r < visibleRows; r++) {
+            const row = [];
+            for (let c = 0; c < visibleCols; c++) {
+                row.push(sheet.options.data[r]?.[c] || '');
+            }
+            newData.push(row);
+        }
+        sheet.setData(newData);
+    };
 
     useEffect(() => {
         if (jssRef.current && !instanceRef.current) {
@@ -132,7 +132,6 @@ const JSpreadsheetCE5Tab = () => {
             instanceRef.current = jspreadsheet(jssRef.current, {
                 worksheets: [
                     {
-                        // 샘플 데이터
                         data: [
                             ['Data1', 'Data2'],
                             ['Data3', 'Data4'],
@@ -143,28 +142,115 @@ const JSpreadsheetCE5Tab = () => {
                             { type: 'text', width: 120 },
                         ],
                         allowComments: true,
-                        // 선택 영역 바깥쪽 테두리를 동적으로 생성
                         style: {
                             ...buildOuterBorderStyle('B1', 'B9', borderColor, '2px'),
                         },
                         minDimensions: [10, 10],
+                        onload: () => setIsReady(true),
                     },
                 ],
             });
         }
-
         return () => {
-            if (instanceRef.current && typeof instanceRef.current.destroy === 'function') {
-                try { instanceRef.current.destroy(); } catch (e) { /* noop */ }
-            }
+            if (instanceRef.current?.destroy) instanceRef.current.destroy();
             instanceRef.current = null;
             if (jssRef.current) jssRef.current.innerHTML = '';
         };
     }, []);
 
+    // ✅ 리사이즈 이벤트
+    useEffect(() => {
+        const handleMove = (e) => {
+            if (!resizing) return;
+            const wrapper = document.querySelector('.grid-wrapper');
+            if (!wrapper) return;
+            const rect = wrapper.getBoundingClientRect();
+
+            if (resizing === 'right') {
+                setSize((prev) => ({
+                    ...prev,
+                    width: Math.max(300, e.clientX - rect.left),
+                }));
+            } else if (resizing === 'bottom') {
+                setSize((prev) => ({
+                    ...prev,
+                    height: Math.max(200, e.clientY - rect.top),
+                }));
+            } else if (resizing === 'corner') {
+                // ✅ 대각선 리사이즈
+                setSize({
+                    width: Math.max(300, e.clientX - rect.left),
+                    height: Math.max(200, e.clientY - rect.top),
+                });
+            }
+        };
+        const stop = () => setResizing(null);
+        if (resizing) {
+            document.addEventListener('mousemove', handleMove);
+            document.addEventListener('mouseup', stop);
+        }
+        return () => {
+            document.removeEventListener('mousemove', handleMove);
+            document.removeEventListener('mouseup', stop);
+        };
+    }, [resizing]);
+
+    useEffect(() => {
+        updateTableSize();
+    }, [size]);
+
     return (
-        <div className="grid-wrapper">
-            <div ref={jssRef} />
+        <div
+            className="grid-wrapper"
+            style={{
+                position: 'relative',
+                width: `${size.width}px`,
+                height: `${size.height}px`,
+                border: '1px solid #ccc',
+                overflow: 'hidden',
+            }}
+        >
+            <div ref={jssRef} style={{ width: '100%', height: '100%' }} />
+
+            {/* 오른쪽 리사이즈 핸들 */}
+            <div
+                onMouseDown={() => setResizing('right')}
+                style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    width: '6px',
+                    height: '100%',
+                    cursor: 'ew-resize',
+                }}
+            />
+
+            {/* 아래쪽 리사이즈 핸들 */}
+            <div
+                onMouseDown={() => setResizing('bottom')}
+                style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '6px',
+                    cursor: 'ns-resize',
+                }}
+            />
+
+            {/* ✅ 대각선 리사이즈 핸들 (↘ 모서리) */}
+            <div
+                onMouseDown={() => setResizing('corner')}
+                style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    right: 0,
+                    width: '12px',
+                    height: '12px',
+                    cursor: 'nwse-resize',
+                    background: 'transparent',
+                }}
+            />
         </div>
     );
 };
