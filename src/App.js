@@ -7,6 +7,7 @@ import AGGridTab from './components/AGGridTab.jsx';
 import TanstackDataGridTab from './components/TanstackDataGridTab.jsx';
 import JSpreadsheetCE5Tab from './components/JSpreadsheetCE5Tab.jsx';
 import JSpreadsheetCE5Tab_edit from './components/JSpreadsheetCE5Tab_edit.jsx';
+import JSpreadsheetPROTab from './components/JSpreadsheetPROTab.jsx';
 
 const tabs = [
     {
@@ -44,15 +45,20 @@ const tabs = [
         label: 'JSpreadsheet CE_EDIT',
         component: JSpreadsheetCE5Tab_edit,
     },
+    {
+        id: 'jspreadsheet_pro',
+        label: 'JSpreadsheet PRO',
+        component: JSpreadsheetPROTab,
+    },
 ];
 
 function App() {
-    const [activeTab, setActiveTab] = useState(tabs[6].id);
+    const [activeTab, setActiveTab] = useState(tabs[7].id);
     const ActiveComponent = tabs.find(tab => tab.id === activeTab)?.component;
 
     return (
         <div className="App">
-            <h1>스프레드시트 테스트 애플리케이션</h1>
+            <h1>스프레드시트 테스트</h1>
             <div className="tab-container">
                 <div className="tab-buttons">
                     {tabs.map(tab => (
