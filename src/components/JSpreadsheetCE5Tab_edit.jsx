@@ -4,6 +4,7 @@ import 'jspreadsheet-ce/dist/jspreadsheet.css';
 import 'jsuites/dist/jsuites.css';
 import XlsxPopulate from 'xlsx-populate/browser/xlsx-populate';
 
+
 // 컴포넌트 외부에서 한 번만 설정
 jspreadsheet.setDictionary({
     // 행 관련
@@ -54,8 +55,10 @@ jspreadsheet.setDictionary({
     'This action will clear your search results. Are you sure?': '이 작업은 검색 결과를 지웁니다. 계속하시겠습니까?'
 });
 
+
 // 테두리 색상
 const borderColor = '#ff1e1e';
+
 
 // 예: 'A1' -> { col: 1, row: 1 }
 const parseRef = (ref) => {
@@ -70,6 +73,7 @@ const parseRef = (ref) => {
     return { col, row };
 };
 
+
 // 1 -> 'A', 27 -> 'AA'
 const colToLetters = (n) => {
     let s = '';
@@ -81,6 +85,7 @@ const colToLetters = (n) => {
     }
     return s;
 };
+
 
 // 외곽 테두리 생성
 const buildOuterBorderStyle = (start, end, color = borderColor, width = '2px') => {
@@ -102,11 +107,13 @@ const buildOuterBorderStyle = (start, end, color = borderColor, width = '2px') =
     return style;
 };
 
+
 const JSpreadsheetCE5Tab = () => {
     const jssRef = useRef(null);
     const instanceRef = useRef(null);
     const fileInputRef = useRef(null);
-    const [activeSheet, setActiveSheet] = React.useState(0); // ✅ 현재 선택된 시트 index
+    const [activeSheet, setActiveSheet] = React.useState(0);
+
 
     useEffect(() => {
         if (jssRef.current && !instanceRef.current) {
@@ -119,8 +126,15 @@ const JSpreadsheetCE5Tab = () => {
                         allowComments: true,
                         style: { ...buildOuterBorderStyle('B1', 'B5', borderColor, '2px') },
                         minDimensions: [10, 10],
+                        // 가상화 설정
+                        lazyLoading: true,
+                        tableOverflow: true,
                     },
                 ],
+                // 글로벌 가상화 설정
+                lazyLoading: true,
+                tableOverflow: true,
+                tableHeight: '600px',
             });
         }
         return () => {
@@ -132,17 +146,34 @@ const JSpreadsheetCE5Tab = () => {
         };
     }, []);
 
+
     const renderSheet = (worksheets, index) => {
         if (!worksheets[index]) return;
         if (instanceRef.current?.destroy) {
             try { instanceRef.current.destroy(); } catch {}
         }
         jssRef.current.innerHTML = '';
-        instanceRef.current = jspreadsheet(jssRef.current, { worksheets: [worksheets[index]] });
+        
+        // 가상화가 적용된 워크시트 설정
+        const sheetConfig = worksheets[index];
+        
+        instanceRef.current = jspreadsheet(jssRef.current, {
+            worksheets: [{
+                ...sheetConfig,
+                // 가상화 설정 추가
+                lazyLoading: true,
+                tableOverflow: true,
+            }],
+            // 글로벌 가상화 설정
+            lazyLoading: true,
+            tableOverflow: true,
+            tableHeight: '600px',
+        });
     };
 
+
     return (
-        <div className="grid-wrapper">
+        <div className="grid-wrapper" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
             <div style={{ marginBottom: '10px' }}>
                 <input
                     ref={fileInputRef}
@@ -156,6 +187,7 @@ const JSpreadsheetCE5Tab = () => {
                             let XLSX = window.XLSX || (await import('xlsx'));
                             const wb = XLSX.read(array, { type: 'array', cellStyles: true });
 
+
                             // ✅ 모든 시트 읽기
                             const worksheets = [];
                             for (const name of wb.SheetNames) {
@@ -166,6 +198,7 @@ const JSpreadsheetCE5Tab = () => {
                                 const colCount = Math.max(10, range.e.c + 1);
                                 const data = Array.from({ length: rowCount }, () => Array(colCount).fill(''));
 
+
                                 Object.keys(ws)
                                     .filter(k => /^[A-Z]+\d+$/.test(k))
                                     .forEach(addr => {
@@ -173,6 +206,7 @@ const JSpreadsheetCE5Tab = () => {
                                         const c = XLSX.utils.decode_cell(addr);
                                         data[c.r][c.c] = (cell && (cell.w ?? cell.v)) ?? '';
                                     });
+
 
                                 const mergeCells = {};
                                 (ws['!merges'] || []).forEach(m => {
@@ -183,6 +217,7 @@ const JSpreadsheetCE5Tab = () => {
                                     const cols = (m.e.c - m.s.c) + 1;
                                     if (rows > 1 || cols > 1) mergeCells[startAddr] = [cols, rows];
                                 });
+
 
                                 const workbook = await XlsxPopulate.fromDataAsync(array);
                                 const sheet = workbook.sheet(name);
@@ -207,21 +242,31 @@ const JSpreadsheetCE5Tab = () => {
                                     });
                                 });
 
-                                const sheetConfig = { data, minDimensions: [colCount, rowCount] };
+
+                                const sheetConfig = { 
+                                    data, 
+                                    minDimensions: [colCount, rowCount],
+                                    // 가상화 설정
+                                    lazyLoading: true,
+                                    tableOverflow: true,
+                                };
                                 if (Object.keys(mergeCells).length) sheetConfig.mergeCells = mergeCells;
                                 if (Object.keys(style).length) sheetConfig.style = style;
                                 worksheets.push({ ...sheetConfig, worksheetName: name });
                             }
 
+
                             // ✅ 시트 전환 UI 렌더링
                             setActiveSheet(0);
                             renderSheet(worksheets, 0);
+
 
                             // ✅ 시트 탭 버튼 렌더링
                             const tabContainer = document.createElement('div');
                             tabContainer.style.marginBottom = '8px';
                             tabContainer.style.display = 'flex';
                             tabContainer.style.gap = '6px';
+
 
                             worksheets.forEach((sheet, idx) => {
                                 const btn = document.createElement('button');
@@ -241,6 +286,7 @@ const JSpreadsheetCE5Tab = () => {
                                 tabContainer.appendChild(btn);
                             });
 
+
                             if (jssRef.current.parentElement) {
                                 jssRef.current.parentElement.insertBefore(tabContainer, jssRef.current);
                             }
@@ -252,9 +298,10 @@ const JSpreadsheetCE5Tab = () => {
                     }}
                 />
             </div>
-            <div ref={jssRef} />
+            <div ref={jssRef} style={{ flex: 1, overflow: 'auto' }} />
         </div>
     );
 };
+
 
 export default JSpreadsheetCE5Tab;
