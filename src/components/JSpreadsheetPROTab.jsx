@@ -24,73 +24,45 @@ if (typeof document !== 'undefined') {
     const style = document.createElement('style');
     style.id = styleId;
     style.textContent = `
-      /* jSuites Tabs 스타일 */
-      .jtabs-tab {
-        font-size: 12px !important;
-        padding: 8px 12px !important;
-        background-color: #ecf0f1 !important;
-        color: #ff0000 !important;
-        border: 1px solid #bdc3c7 !important;
-        cursor: pointer !important;
-        transition: all 0.2s ease !important;
-      }
-
-      .jtabs-tab:hover {
-        background-color: #bdc3c7 !important;
-      }
-
-      /* 선택된 탭 스타일 */
-      .jtabs-tab.jtabs-selected {
-        background-color: #2c3e50 !important;
-        color: #ffffff !important;
-        border: 1px solid #1a252f !important;
-        font-weight: 600 !important;
-      }
-
-      .jtabs-tab.jtabs-selected:hover {
-        background-color: #34495e !important;
-      }
-
-      /* 탭 컨테이너 스타일 */
+      /* ✅ 기본 시트탭 완전 숨김 */
+      .jss_tabs,
       .jtabs {
-        border-bottom: 2px solid #bdc3c7 !important;
-        padding: 4px !important;
-        background-color: #f8f9fa !important;
+        display: none !important;
+        height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
       }
 
-      /* jSpreadsheet의 탭 컨테이너 */
-      .jss_tabs {
-        display: flex !important;
-        gap: 2px !important;
-        padding: 4px !important;
-        background-color: #f8f9fa !important;
-        border-bottom: 2px solid #bdc3c7 !important;
+      /* ✅ 커스텀 탭 버튼 스타일 */
+      .custom-tab-container {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 8px;
+        padding: 8px;
+        background-color: #f8f9fa;
+        border-bottom: 2px solid #bdc3c7;
+        flex-wrap: wrap;
       }
 
-      .jss_tab {
-        font-size: 12px !important;
-        padding: 8px 12px !important;
-        background-color: #ecf0f1 !important;
-        color: #ff0000 !important;
-        border: 1px solid #bdc3c7 !important;
-        border-radius: 4px 4px 0 0 !important;
-        cursor: pointer !important;
-        transition: all 0.2s ease !important;
+      .custom-tab-btn {
+        padding: 4px 8px;
+        cursor: pointer;
+        border: 1px solid #ccc;
+        background: #fff;
+        font-size: 14px;
+        border-radius: 4px;
+        transition: all 0.2s ease;
       }
 
-      .jss_tab:hover {
-        background-color: #bdc3c7 !important;
+      .custom-tab-btn:hover {
+        background-color: #e0e0e0;
       }
 
-      .jss_tab.jss_tab_selected {
-        background-color: #2c3e50 !important;
-        color: #ffffff !important;
-        border: 1px solid #1a252f !important;
-        font-weight: 600 !important;
-      }
-
-      .jss_tab.jss_tab_selected:hover {
-        background-color: #34495e !important;
+      .custom-tab-btn.active {
+        border: 2px solid #007bff;
+        background: #e8f0ff;
+        font-weight: 600;
       }
     `;
     document.head.appendChild(style);
@@ -101,55 +73,11 @@ export default function JSpreadsheetPROTab() {
   const rootRef = useRef(null);
   const inputRef = useRef(null);
   const instanceRef = useRef(null);
-  const tabObserverRef = useRef(null);
-
-  const applyTabStylesDirectly = () => {
-    if (!rootRef.current) return;
-
-    // jSuites 탭 요소
-    const jsuitesTabs = rootRef.current.querySelectorAll('.jtabs-tab');
-    jsuitesTabs.forEach(tab => {
-      if (tab.classList.contains('jtabs-selected')) {
-        tab.style.backgroundColor = '#2c3e50';
-        tab.style.color = '#ffffff';
-        tab.style.fontWeight = '600';
-        tab.style.fontSize = '12px';
-        tab.style.padding = '8px 12px';
-      } else {
-        tab.style.backgroundColor = '#ecf0f1';
-        tab.style.color = '#ff0000';
-        tab.style.fontSize = '12px';
-        tab.style.padding = '8px 12px';
-      }
-    });
-
-    // jSpreadsheet 탭 요소
-    const jssTabElements = rootRef.current.querySelectorAll('.jss_tab, .jss_tab_link');
-    jssTabElements.forEach(tab => {
-      if (tab.classList.contains('jss_tab_selected')) {
-        tab.style.backgroundColor = '#2c3e50';
-        tab.style.color = '#ffffff';
-        tab.style.fontWeight = '600';
-        tab.style.fontSize = '12px';
-        tab.style.padding = '8px 12px';
-      } else {
-        tab.style.backgroundColor = '#ecf0f1';
-        tab.style.color = '#ff0000';
-        tab.style.fontSize = '12px';
-        tab.style.padding = '8px 12px';
-      }
-    });
-  };
+  const customTabContainerRef = useRef(null);
+  const worksheetNamesRef = useRef([]);
 
   useEffect(() => {
     return () => {
-      if (tabObserverRef.current) {
-        try {
-          tabObserverRef.current.disconnect();
-        } catch {}
-        tabObserverRef.current = null;
-      }
-
       if (instanceRef.current && instanceRef.current.destroy) {
         try {
           instanceRef.current.destroy();
@@ -158,6 +86,45 @@ export default function JSpreadsheetPROTab() {
       }
     };
   }, []);
+
+  // 커스텀 탭 버튼 생성
+  const createCustomTabs = (worksheetNames) => {
+    if (!customTabContainerRef.current) return;
+
+    customTabContainerRef.current.innerHTML = '';
+    worksheetNamesRef.current = worksheetNames;
+
+    worksheetNames.forEach((name, idx) => {
+      const btn = document.createElement('button');
+      btn.className = `custom-tab-btn ${idx === 0 ? 'active' : ''}`;
+      btn.textContent = name || `Sheet${idx + 1}`;
+      btn.type = 'button';
+
+      btn.onclick = () => {
+        try {
+          const parent = Array.isArray(instanceRef.current)
+            ? instanceRef.current?.[0]?.parent
+            : instanceRef.current?.parent;
+          if (parent && typeof parent.openWorksheet === 'function') {
+            parent.openWorksheet(idx, true);
+
+            // 탭 버튼 활성화 상태 업데이트
+            Array.from(customTabContainerRef.current.children).forEach((b, i) => {
+              if (i === idx) {
+                b.classList.add('active');
+              } else {
+                b.classList.remove('active');
+              }
+            });
+          }
+        } catch (err) {
+          console.error('시트 전환 오류:', err);
+        }
+      };
+
+      customTabContainerRef.current.appendChild(btn);
+    });
+  };
 
   const load = async (e) => {
     const file = e?.target?.files?.[0];
@@ -179,41 +146,31 @@ export default function JSpreadsheetPROTab() {
             rootRef.current.innerHTML = '';
           }
 
-          instanceRef.current = jspreadsheet(rootRef.current, config);
-
-          console.log('스프레드시트 로드 완료');
-
-          setTimeout(() => {
-            applyTabStylesDirectly();
-            console.log('1차 탭 스타일 적용');
-          }, 100);
-
-          setTimeout(() => {
-            applyTabStylesDirectly();
-            console.log('2차 탭 스타일 적용');
-          }, 200);
-
-          if (rootRef.current && !tabObserverRef.current) {
-            const tabsContainer = rootRef.current.querySelector('.jss_tabs') || 
-                                 rootRef.current.querySelector('.jtabs');
-            if (tabsContainer) {
-              const observer = new MutationObserver(() => {
-                setTimeout(() => {
-                  applyTabStylesDirectly();
-                }, 50);
-              });
-
-              observer.observe(tabsContainer, {
-                attributes: true,
-                attributeFilter: ['class'],
-                subtree: true,
-                childList: true,
-              });
-
-              tabObserverRef.current = observer;
-              console.log('MutationObserver 등록');
-            }
+          // 모든 워크시트 이름 수집
+          const worksheetNames = [];
+          if (Array.isArray(config.worksheets)) {
+            config.worksheets.forEach((sheet, idx) => {
+              const name = sheet.worksheetName || sheet.name || `Sheet${idx + 1}`;
+              worksheetNames.push(name);
+              sheet.lazyLoading = true;
+              sheet.tableOverflow = true;
+            });
           }
+
+          // 기본 탭 UI 비활성화 및 시트 로드
+          instanceRef.current = jspreadsheet(rootRef.current, {
+            ...config,
+            tabs: false,
+            worksheetTabs: false,
+            lazyLoading: true,
+            tableOverflow: true,
+            tableHeight: '600px',
+          });
+
+          // 커스텀 탭 생성
+          createCustomTabs(worksheetNames);
+
+          console.log('스프레드시트 로드 완료 (커스텀 탭 활성)');
         } catch (err) {
           alert(err?.message || 'Failed to open the XLSX file.');
           console.error('스프레드시트 생성 오류:', err);
@@ -257,6 +214,9 @@ export default function JSpreadsheetPROTab() {
         onChange={load}
         style={{ display: 'none' }}
       />
+
+      {/* ✅ 커스텀 탭 컨테이너 */}
+      <div ref={customTabContainerRef} className="custom-tab-container" />
 
       <div
         ref={rootRef}
